@@ -1,0 +1,244 @@
+* Dagger란?
+    - 코드 생성 기반의 의존성 주입 프레임워크.
+    - 안드로이드에서는 매우 느린 리플렉션을 사용한 기존 프레임워크보다 안드로이드에 더 적합하지만, 안드로이드 전용은 아님
+    - Android를 위한 표준 DI 프레임워크
+    - JSR-330 표준을 annotation processor 기반 코드 생성을 이용해서 구현함
+    - 단, annotation을 통한 코드 생성이 일어나므로 빌드 시간에 상당한 오버헤드가 있음
+    - Android Studio 지원
+      V 실시간으로 코드 생성 결과를 알 수 있고, lint 지원도 있음
+      V 에러 발생 시, 정확한 에러 원인을 알려줌
+    - 모든 구현이 코드 생성 기반이므로 실행 속도가 빠름
+    - Android에서 사용할 수 있는 DI 툴들 중 가장 강력하고 유연하며, 방대한 양의 기능 제공
+
+* Dagger 주요 개념: Components
+    - Dagger가 객체들의 생성을 관리하기 위해 생성하는 Injector 클래스의 원형
+    - interface 혹은 abstract class 로 정의해야함
+    - Builder / Factory 인터페이스를 제공
+    - 아래 방법은 컴포넌트의 메소드 형태로 객체 인스턴스를 얻을 수 있게 해줌
+
+    @Component
+    interface AppGraph {
+        fun newsApi(): NewsApi
+    }
+    // 사용예: val newsApi = Application.appGraph.newsApi()
+
+    @Component("dagger")
+    class DaggerAppGraph implements AppGraph {
+        @Overrides NewsApi newsApi() {
+            return ...
+        }
+    }
+
+* Dagger 주요 개념: Bindings
+        Key                     BindValue
+    Foo::class      ->      { Foo() }
+    Bar::class      ->      { foo: Foo -> Bar(foo) }
+
+    - 각 객체의 생성이 실제로 정의되는 곳 (예: @Provides 메소드)
+
+    @Provides
+    fun provideNewsRemoteDataSource(newsApi: NewsApi): NewsRemoteDataSource = NewsRemoteDataSource(newsApi)
+
+    @Provides
+    fun provideNewsApi(newsApi: ProdNewsApi): NewsApi = newsApi
+
+* Dagger 주요 개념: Bindings
+    - 함수에 매개 변수가 있는 경우, 또 다른 바인딩을 검색해서 주입해줌
+
+    @Provides
+    fun provideNewsRemoteDataSource(newsApi: NewsApi): NewsRemoteDataSource = NewsRemoteDataSource(newsApi)
+
+    @Provides
+    fun provideNewsApi(newsApi: ProdNewsApi): NewsApi = newsApi
+
+* Dagger 주요 개념: @Inject
+    - 일반적이지만, 장황한 표현
+
+    @Provides
+    fun provideNewsRemoteDataSource(newsApi: NewsApi): NewsRemoteDataSource {
+        return NewsRemoteDataSource(newsApi)
+    }
+
+    - 위와 동일하지만, 간결한 표현
+
+    class NewsRemoteDataSource @Inject constructor(newsApi: NewsApi) {
+
+    }
+
+* 필드 주입(Field injection): 의존성 주입을 위한 다른 방법
+    - 필드 주입은 생성자를 통하지 않고 주입하는 방법 (반대: 생성자 주입)
+    - 내부적으로 같은 패키지 내에 값만 대입하기 위한 클래스를 생성하는 형태로 구현됨
+      V private으로 지정 불가능 (최소 protected 이상)
+      V final로 지정 불가능
+      V 추가 클래스 생성의 오버헤드가 있음
+    - 생성자 주입과는 달리 깔끔한 binding graph가 만들어지기 어려움
+    - Dagger가 직접 생성할 수 없는 클래스 (예: Activity 혹은 Fragment)에서 사용됨
+
+    class NewsRemoteDataSource {
+        @Inject lateinit var newsApi: NewsApi
+    }
+
+* Binding Graph
+    - 의존성들의 모든 경로는 그래프 형태(Directed Acyclic Graphs)로 표현될 수 있음
+
+    class A @Inject constructor(b: B)
+    class B @Inject constructor(C: C, d: D)
+    // 다른 바인딩에 전혀 의존하지 않은 노드까지 끝이 나는 형태 (비순환 그래프)
+    class C @Inject constructor()
+    class D @Inject constructor()
+
+    - 비순환 그래프 (DAG)
+    - Dagger가 단검이라는 뜻이 아니라 DAG에서 나옴
+
+* Dagger는 그래프를 순회한다
+    - 인사이트: Dagger가 코드를 처리할 때, component 메소드에서 시작해서 그래프를 완성하게 됨
+
+    @Component
+    interface AppGraph {
+        fun getA(): A
+    }
+
+* Dagger 주요 개념: Binding Keys
+    - Foo, Bar라는 식별자가 있을 때, 이를 key라고 부름
+      -> Dagger에게 어떤 바인딩이 사용되어야 하는지를 쉽게 정의할 수 있음
+
+    ※ 주의
+    - List와 ArrayList는 다른 식별자임
+    - List<String>과 List<Integer>도 다음
+    - @Provides ArrayList<String> 으로 바인딩을 설정한 다음 List<String>을 주입하려고 하면 에러가 발생
+
+* Dagger 주요 개념: Qualifiers (수식자)
+    - 하나의 타입에 대해서 다른 인스턴스를 전달하고 싶을 경우가 있음
+    - 타입과 qualifier의 조합으로 바인딩 키를 만들 수 있음
+      V retrofit http interceptor가, 일반적인 인스턴스와 인증에서만 사용되는 것 두 가지가 있을 때
+      V Context는 ApplicationContext의 인스턴스일 수도, Activity Context일 수도 있음
+
+    @Qualifier
+    @Retention(AnnotationRetention.BINARY)
+    annotation class AuthInterceptorOkHttpClient
+
+    @Qualifier
+    @Retention(AnnotationRetention.BINARY)
+    annotation class OtherInterceptorOkHttpClient
+
+    - 정의된 qualifier는 어디에서든 타입과 함께 사용될 수 있음
+
+    @AuthInterceptorOkHttpClient
+    @Provides
+    fun provideAuthInterceptorOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient = OkHttpClient.Buildeer().addInterceptor(authInterceptor).build()
+    //
+    @AuthInterceptorOkHttpClient
+    @Inject lateinit var okHttpClient: OkHttpClient
+
+* Dagger 주요 개념: Module
+    - 단순히 바인딩들의 모음
+    - 주의: 멀티모듈의 모듈 (gradle module)과는 전혀 다른 개념
+
+    @Module
+    class NetworkModule {
+        @AuthInterceptorOkHttpClient
+        @Provides
+        fun provideAuthInterceptorOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient = OkHttpClient.Buildeer().addInterceptor(authInterceptor).build()
+    }
+
+    - 모듈은 컴포넌트 안에서 설치됨 (혹은 다른 모듈들 안에 포함됨)
+    - 주의
+      V 하나의 모듈이 여러 개의 컴포넌트에 설치될 수 없음
+      V 모듈이 (개발자 실수로) 아무데도 속하지 않아도 컴파일 에러가 나지 않음
+
+      @Component(modules = [NetworkModule::class])
+      interface ApplicationComponent {
+        ...
+      }
+
+* 멀티 컴포넌트
+    - 특정 범위 (예: Activity 혹은 Fragment)안에서만 이뤄지는 바인딩이 필요한 경우, Subcomponent를 사용
+
+    @Subcomponent(modules = [ClickActivityModule::class])
+    interface ActivityComponent {
+        fun clickManager(): ClickManger
+    }
+
+* Dagger 실제 예
+
+    @Module
+    class ProdNewsModule {
+        @Provides
+        fun provideProdNewsApi(newsApi: ProdNewsApi): NewsApi = newsApi
+    }
+
+    @Module
+    class FakeNewsModule {
+        @Provides
+        fun provideFakeNewsApi(newsApi: FakeNewsApi): NewsApi = newsApi
+    }
+
+* 서브 컴포넌트는 다른 컴포넌트들의 자식
+    - 서브 컴포넌트는 부모의 모든 바인딩을 상속받음
+      Application
+        Activity
+        Click Manger
+      NewsApi, ...
+
+* Dagger 구현 예
+    - 앞서 예를 Dagger로 구현하면..
+
+    class NewsRemoteDataSource @Inject constructor(newsApi: NewsApi) {
+
+    }
+
+    interface NewsApi {}
+
+    class ProdNewsApi @Inject constructor(): NewsApi {
+
+    }
+
+    class FakeNewsApi @Inject constructor(): NewsApi {
+
+    }
+
+* Dagger 구현 예
+
+    @Component(modules = [ProdNewsModule::class])
+    interface ApplicationComponent {
+        fun newsRemoteDataSource(): NewsRemoteDataSource
+    }
+
+    class MyApplication : Application {
+        val appComponent = DaggerApplicationComponent.create()
+        override fun onCreate() {
+            super.onCreate()
+            val newsRemoteDataSource = appComponent.newsRemoteDataSource()
+            ...
+        }
+    }
+
+* 멤버 주입
+    - 대부분의 경우, Component에 일일히 getter 메소드를 만드는 것은 괴로움
+    - 따라서 이런 형태는 생성의 세부 내용을 컨트롤 해야하는 경우에만 사용하고, @Inject 를 통해서 주입되는 것이 효율적
+    - Application에서 갖고 있어야 하는 인스턴스들도 @Inject 필드 형태로 만드는 것이 더 편함
+
+* 멤버 주입
+
+    @Component(modules = [ProdNewsModule:class])
+    interface ApplicationComponent {
+        fun inject(MyApplication application
+    }
+
+    class MyApplication : Application {
+        val appComponent = DaggerApplicationComponent.create()
+        @Inject lateinit var newsRemoteDataSource: NewsRemoteDataSource
+
+        override fun onCreate() {
+            super.onCreate()
+            appComponent.inject(this)
+        }
+    }
+
+* Dagger 복습
+    - 객체의 생성 혹은 초기화를 담당해줌
+      -> 개발자가 직접 구현할 필요 없이 대부분의 코드를 자동으로 생성해줌
+    - (어느 정도의) 보일러 플레이트 코드를 제거해줌
+      -> Dagger 설정을 위한 새로운 보일러 플레이트가 추가되는 측면도 있으나 전체적으로는 감소
+    - 시작점(entry points / root)로부터 시작해서 필요한만큼 탐색하는 형태로 그래프를 분석
+    - (대부분의) 구현 실수를 컴파일 시에 찾아줌
