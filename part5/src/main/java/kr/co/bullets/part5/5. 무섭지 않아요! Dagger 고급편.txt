@@ -1,0 +1,109 @@
+* Dagger: Scopes
+    - 기본 설정: 모든 주입은 새 인스턴스를 만들어서 이뤄짐
+    - 스코프: 컴포넌트 내에서는 인스턴스를 재사용
+    - 스코프의 정의는 컴포넌트에서 이뤄짐
+
+    @Provides
+    @Singleton
+    fun provideFoo(): Foo {}
+
+    @ActivityScoped
+    class Foo @Inject constructor() {
+
+    }
+
+* Hilt: Scopes
+    - SingletonComponent -> @Singleton
+    - ActivityComponent -> @ActivityScoped
+    - ActivityRetaintedComponent -> @ActivityRetainedScoped
+    - FragmentComponent -> @FragmentScoped
+    - ViewModelComponent -> @ViewModelScoped
+    - ViewComponent / ViewWithFragmentComponent -> @ViewScoped
+    - ServiceComponent -> @ServiceScoped
+
+* Scopes
+    - 기능상 명확히 필요한 곳에서만 사용할 것
+    - 스코프를 설정한 컴포넌트가 해제되기 전에는 인스턴스가 GC에 의해 수집되지 않음
+    - 명확히 스코프의 이점이 없는 stateless한 오브젝트, 인스턴스가 계속 유지될 이유가 없는 것들, ..
+      -> 좌우지간 잘 모르겠다면 쓰지 않는 것이..
+
+* Dagger: Injecting lazily
+    - Provider<T> - 인스턴스를 생성하는 get() 메소드를 가진 wrapper
+
+    class Foo @Inject constructor(barProvider: Provider<Bar>) {
+
+        fun useBar() {
+            barProvider.get() // 이 시점에서 생성
+                .doSometing()
+        }
+    }
+
+    - Provder<T>.get()는 스코프 지정이 되어 있지 않는 한, 매번 생성을 시도
+    - Lazy<T>.get()은 같은 인스턴스를 제공
+      V 특히 Application 내에서 injection에 매우 유용!
+    - 캐싱이 반드시 필요하지 않다면 Provider를 쓰는 것이 바람직
+
+* Dagger: @Binds impl to an interface
+    - @Binds는 구체적인 클래스의 인스턴스를 인터페이스와 바인딩해줌
+    - 클래스 생성을 하는 @Providers와는 코드를 생성하지 않음. 그러므로...
+      V @Binds 쪽이 실행시의 오버헤드가 적음
+
+    @Binds
+    abstract fun bindNewsApi(impl: ProdNewsApi): NewsApi
+
+    ==
+
+    @Provides
+    fun provideNewsApi(impl: ProdNewsApi): NewsApi = impl
+
+* Dagger: Multibindings
+    - 하나의 타입에 대해서 여러 인스턴스를 지정하는 방법
+    - Set 혹은 Map으로 바인딩 가능
+
+    @Multibinds
+    abstract fun setOfFoo(...): Set<Foo>
+
+    @Multibinds
+    abstract fun mapOfFoo(): Map<String, Foo>
+
+    @IntoSet - Set<T>로 바인딩 생성
+
+    @Provides
+    @Binds
+    @IntoSet
+    static fun provideFoo(..): Foo {}
+
+    @Binds
+    @IntoSet
+    abstract fun bindFoo(impl: SomeFooImpl): Foo
+
+    @IntoMap - Map<K, T>로 바인딩 생성
+
+    @Provides
+    @StringKey("key")
+    @IntoMap
+    fun provideFoo(..): Foo { ... }
+
+    @Binds
+    @StringKey("key")
+    @IntoMap
+    abstract fun bindFoo(impl: SomeFooImpl): Foo
+
+    - 모든 Set / Map을 위해서 멀티바인딩이 필요한 것은 아님
+    - 멀티 바인딩 정의(contribution)를 하는 곳들이 불명확하고 앱 여기저기에
+      흩어져 있을 때 매우 유용 - eg. ViewModelProvider
+    - 보다 예측 가능한 경우라면 qualifier를 사용하는 편이 유리
+
+* Dagger: Optionals
+    - 멀티바인딩과 유사하지만 하나의 값만 가짐
+    - 예: 디폴트 값을 설정하는 경우
+
+      @BindsOptionsOf
+      abstract fun bindOptionalFoo(): Foo
+
+    - 주입되는 타입
+      Optional<Foo>
+
+    - Foo의 모든 바인딩은 컴파일 시에 optional을 보장함
+
+
