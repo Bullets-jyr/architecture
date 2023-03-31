@@ -1,0 +1,116 @@
+* Hilt란?
+    - Dagger API를 Android에서 설치하고 설정하고 테스트 하는 과정을 쉽게 해주는 오픈소스 레퍼(wrapper) 라이브러리
+    - 원래 Google의 1st party 앱들에서 사용되던 Dagger의 보조 라이브러리
+    - 주 목적
+      V 테스트를 위한 의존성 주입 설정 기능 추가
+      V Android 앱에서 반복적으로 많이 사용되는 boilerplate 코드를 제거
+    - 가장 전형적인 유스케이스 위주로 opinionated 되어 있으나 대형 프로젝트에 충분히 사용될 수 있을만큼 강력하고 방대한 인터페이스 제공
+
+* Dagger만으로 왜 충분하지 않은가?
+    - Dagger는 범용 DI 프레임워크: Android에서 쓰려면 상당량의 보일러 플레이트 코드가 요구됨
+    - 단, 초기화 부분의 보일러 플레이트만 문제라면 dagger.android로 해결할 수도 있음
+      (AndroidInjector, DaggerActivity, HasAndroidInjector, @ContributesAndroidInjector)
+
+* Dagger와 다른 점들 - 설정부터...
+    - ./build.gradle, app/build.gradle
+
+* Components: Dagger
+
+* Components: Hilt
+    - Hilt는 표준 Android의 구성요소들 안에서 별도 설정 없이 쓸 수 있게 해줌
+    - 컴포넌트 설정이 없음
+      V 컴포터는 계층구조 설정도 없음
+    - Hilt를 사용하면 자동으로 앱 전역에 걸쳐 일관된 컴포넌트 구조가 만들어
+
+* Injection: Hilt
+    - 주입은 super.onCreate() 안에서 일어남
+    - @AndroidEntryPoint는 Fragment, View, Service, BroadcastReceiver에도 쓸 수 있음
+
+    @HiltAndroidApp(Application::class)
+    class MyApplication: Hilt_MyApplication() {
+
+    }
+
+    @AndroidEntryPoint(ComponentActivity::class)
+    class MainActivity: Hilt_MainActivity() {
+        @Inject lateinit var clickHandler: ClickHandler
+    }
+
+* Hilt Gradle plugin
+    - Gradle 플러그인을 이용하면 자동 생성된 클래스를 의식할 필요도 없음
+
+    @HiltAndroidApp
+    class MyApplication: Application() {
+
+    }
+
+    @AndroidEntryPoint
+    class MainActivity: ComponentActivity() {
+        @Inject lateinit var clickHandler: ClickHandler
+    }
+
+* Modules: Dagger
+    - Dagger에서는 모듈을 직접 컴포넌트에 설치해줄 필요가 있음
+    - 개발자는 각 모듈이 정확히 어느 컴포넌트에 설치되는가 기억해두고 있어야함
+
+    @Component(modules = [ProdNewsModule:class])
+    interface ApplicationComponent {}
+
+    @Coponent(modules = [ProdClickModule::class])
+    interface ActivityComponent {}
+
+* Injection: Hilt
+    - Hilt에서는 @Installin 어노테이션만 모듈에 추가하면 됨 (필수 값)
+
+    @Module
+    @InlstallIn(SingletonComponent::class)
+    class ProdNewsModule {
+
+        @Provides
+        fun provideProdNewsApi(newsApi: ProdNewsApi): NewsApi = newsApi
+    }
+
+* Entry Points
+    - 엔트리 포인트는 Dagger + Hilt가 직접 주입할 수 있는 방법이 없는 곳에 유용
+    - 예를 들면, @AndroidEntryPoint는 ContentProvider에서 쓸 수 없음
+
+    class MyContentProvider: ContentProvider {
+
+        fun doSomeFoo() {
+            // 여기에 Foo 오프젝트가 필요
+        }
+    }
+
+    - Hilt에서는 사용자 정의 엔트리 포인트를 설정가능
+    - 모듈과 비슷하게 @Installin을 이용해서 컴포넌트를 지정
+
+    @EntryPoint
+    @Installin(SingletonComponent::class)
+    interface FooEntryPoint {
+        fun foo(): Foo
+    }
+
+    - EntryPoints.get()을 이용해 접근
+
+    class MyContentProvider: ContentProvider {
+
+        fun doSomeFoo() {
+            val foo = EntryPoint.get(appContext, FooEntryPoint::class).foo()
+        }
+    }
+
+* Hilt 정리
+
+    @HiltAndroidApp
+    class MyApplication: Application() { ... }
+
+    @AndroidEntryPoint
+    class MainActivity: ComponentActivity() { ... }
+
+    @Module
+    @InstallIn(SingletonComponent::class)
+    class ProdNewsModule { ... }
+
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface FooEntryPoint { .. }
