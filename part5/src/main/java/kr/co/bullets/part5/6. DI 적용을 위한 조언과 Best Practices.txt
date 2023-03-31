@@ -1,0 +1,200 @@
+* Hilt best practices
+    - 꼭 필요한 것만 provide 할 것
+    - 의존성 주입은 정의된 모든 객체에 접근할 수 있는 강력함을 제공. 대신 모든
+      것이 전역적으로 보이게 되므로 주의가 필요
+    - 실제 구현 클래스는 노출하지 않는 것이 좋은
+      -> 구현 클래스(concrete class)를 제공하기 위한 provide 메소드를 피할 것
+
+    // Bad
+    @Module
+    interface FooModule {
+
+        @Provides
+        fun provideFooImpl(/*...*/): FooImpl = FooImpl(/*...*/)
+
+        @Binds
+        fun bindFoo(fooImpl: FooImpl): Foo
+    }
+
+    // Good
+    @Module
+    interface FooModule {
+
+        @Provides
+        fun provideFoo(/*...*/): Foo = FooImpl(/*...*/)
+    }
+
+    - 복수의 바인딩에 @Inject 생성자 사용하지 말 것
+    - 다른 scope에서 사용되는 복수의 바인딩이 있을 경우
+      @Inject 생성자를 쓰면 잘못된 바인딩이 생성될 수 있음
+
+    // 사용처마다 다른 종류의 Lifecycle를 사용하게 허용하려면, 생성자 주입은 바람직하지 않음
+
+    class RxLifecycle(lifecycle: Lifecycle) {
+
+        ...
+
+    }
+
+    @Module
+    @InstallIn(ActivityComponent::class)
+    interface ActivityRxLifecycleModule {
+
+        @Provides
+        @ActivityLevel
+        fun provideActivityLevelRxLifecycle(activity: Activity): RxLifecycle = RxLifecycle(activity.getLifecycle())
+    }
+
+    @Module
+    @InstallIn(FragmentComponent::class)
+    interface FragmentRxLifecycleModule {
+
+        @Provides
+        @FragmentLevel
+        fun provideFragmentLevelRxLifecycle(fragment: Fragment): RxLifecycle = RxLifecycle(fragment.getLifecycle())
+    }
+
+    - @Named 대신 @Qualifier 사용
+    - @Named는 설정이 간단하고 어디서든 재사용 가능함. 하지만,
+      V semantic한 의미가 약함
+      V 쉽게 실수 할 수 있음
+      V 컴파일 시에 실수가 파악되지 않음
+      V 리팩터링이 어려움
+    - @Qualifier의 위의 문제가 모두 해결됨
+    - Best practice: 각 개별 feature나 라이브러리에서만 사용되는 사용자 정의 qualifier도 적극 추가할 것
+
+    - Scope 사용에 주의할 것
+    - ActivityComponent의 바인딩에서 @ActivityScoped를 절제해서 사용(서로 다른 개념임)
+    - 스코프가 성능에 미치는 영향을 주의깊게 고려할 것
+      V 반드시 필요한 곳에서만 사용되도록..
+    - Provider<T>를 스코프로 생성할 경우 주의할 것
+      V get()으로 생성된 인스턴스는 scope의 영향을 받지 않음
+      V 필요한 경우, Lazy<T>를 대신 사용할 것
+
+    - 성능 팁
+    - @Provides는 메소드 하나마다 내부적으로 팩토리 클래스를 생성함
+      V 할 수 있는 한 @Provides 대신 @Binds를 사용할 것
+      V @Provides는 static 메소드로 구현할 것
+    - @Module 클래스
+      V Kotlin이라면, provides 메소드만 있을 경우는 object, binds 메소드가 있을 경우 interface로 지정
+      V Java라면 interface로 지정
+        -> static이 아닌 provides 메소드 추가 Dagger 컴파일에서 에러 발생
+        * 그외의 경우, Dagger 관련 클래스는 class / abstract class / interface / object는 어느 것을 선택해도 무방
+
+    @Module
+    interface FooModule {
+
+        @Binds
+        fun bindFoo(fooImpl: FooImpl): Foo // 부가 코드 생성이 skip됨
+
+        companion object {
+
+            @Provides
+            fun provideBar(): Bar = Bar() // 새로운 팩토리 클래스를 생성하지 않음
+        }
+    }
+
+    - @Inject 생성자의 가시성
+    - 할 수 있는 한 @Inject 생성자는 internal로 지정
+      -> Dagger 의존성이 생성자를 직접 이용해 잘못 생성되는 것을 방지
+    - Java는 디폴트(package-private)으로 지정
+    - Dagger 외부 접근이 필요한 경우(eg. 테스트), 명시적으로 팩토리 함수를 만들어서 사용
+      V Java라면 테스트를 위해서 @VisibleForTesting 추가 가능
+
+    // Dagger 외부에서 사용하기 위한 전역 팩토리 함수
+    fun createFoo(bar: Bar): Foo {
+        return FooImpl(bar)
+    }
+
+* 그 외
+    - 모듈 분리: 각 모듈이 하나의 일치된 목적만을 가지도록 분리할 것
+      -> 의존성 설정의 그루핑, 테스트 설정을 보다 쉽게 해줌
+    - Hilt 모듈 클래스는 사람이 만든 클래스에서 직접 참조되면 안됨 -> internal로
+      V 반면 Dagger 모듈 클래스는 라이브러리 간 공유되어야 하므로, 특별히 외부 노출을
+        막을 필요가 없는 한 public으로 해야함
+    - @Providers 메소드의 구현을 복잡하게 하지 말 것
+      V 어디까지나 의존성의 조합만을 resposibility로 갖고 있어야 함
+    - Mock 대신 fake 혹은 실제 구현을 사용
+      V Hilt 자체가 mock의 사용을 최소화하기 위해 만들어졌음
+
+* Hilt의 단점
+    - Dagger보다 더 opinionated 되어 있음
+      V 앱 내의 의존성 구분이 컴포넌트가 Hilt가 제공하는 디폴트 트리 구조에 적합하지 않은 경우도 있음:
+        SingletonScope -> ActivityScope -> FragmentScope
+      V AccountScope 같이 ActivityScope / FragmentScope와 다른 생존주기를 가지는 Scope의 정의가 어려움
+    - Dagger의 빌드 속도를 해결해주지 않음 (단, 향후 KSP로 완전히 해결 가능)
+    - Kotlin 지원이 많이 늘었으나, 여전히 Java 기반임
+      V Default parameter들이 빈번하게 사용되는 Jetpack Compose에서는 추가적인 hack이 필요함
+      V 귀찮은 nullability lint 경고 (역시 KSP로 완전 해결 가능)
+    - Dagger의 heavy user라면 일부 migration 과정에서 어려움을 겪을 수 있음
+      V 공식 문서 참조
+
+* Dagger Hilt의 대안: Koin
+    - Service Locator
+    - DSL 기반의 간단한 설정
+
+    val appModule = module {
+        factoryOf(::Bar)
+        factoryOf(::Foo)
+        factoryOf(::ProdNewsApi) {
+            bind<NewsApi>
+        }
+    }
+
+    class MyApplication : Application() {
+
+        override fun onCreate() {
+            super.onCreate()
+            startKoin {
+                module(appModule)
+            }
+        }
+
+    }
+
+    class MainActivity : AppCompatActivity() {
+
+        val bar: Bar by inject()
+        val newsApi: NewsApi by inject()
+    }
+
+    Upside
+    V 간단하게 바인딩 / 주입 구현
+    V 필드 주입도 기본적으로 lazy!
+    V 빠른 빌드 속도
+    V ViewModel도 단순
+    V 버전업이 거듭되면서 Scope, Multibinding, Compose 지원 등의 기능도 제법 충실하게 제공
+    V 런타임에도 의존성 그래프 추가 가능 - 테스트, dynamic feature(Play Feature Delivery)에서 편리
+
+    DownSide
+    V 컴파일 시 체크가 거의 없음 - 의존성 검증을 위한 테스트 구현 필요 (그래도 모든 에러를 찾아내기 까다로움)
+    V (크지는 않지만) 실행시 오버헤드가 있음
+    V Dagger / Hilt가 제공하는 방대한 기능 부재
+
+* Dagger Hilt의 대한: Anvil
+    - Dagger 기반의 컴파일러 플러그인: Dagger와 완전히 동일한 기능 + 편리한 확장 제공
+    - Scope(Dagger Scope과는 다른 개념) 이라는 중간 marker를 정의, 이를 모듈과 컴포넌트로 병합하는 형태의 설정 제공
+    - 유연한 플러그인: 사용자 정의 확장도 넣을 수 있음
+    - Annotation processor를 이용하지 않고 플러그인에서 직접 factory를 생성
+      -> 상당히 빠른 빌드 성능
+
+    - DSL 기반의 간단한 설정
+
+    @Module
+    @ContributesTo(AppScope::class)
+    class FooModule {
+        // 바인딩 정의 방법은 Dagger와 완전히 동일
+        @Provides
+        fun provideFoo() = Foo()
+    }
+
+    @MergeComponent(AppScope::class)
+    interface AppComponent
+
+    class MyApplication : Application() {
+
+        override fun onCreate() {
+            super.onCreate()
+            ComponentHolder.components += DaggerAppComponent.create()
+        }
+    }
